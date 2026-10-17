@@ -30,7 +30,7 @@ concurrency:
 jobs:
   gitleaks:
     name: Scan for hardcoded secrets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, mroot-self-hosted]
     timeout-minutes: 10
     permissions:
       contents: read
