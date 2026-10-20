@@ -30,7 +30,16 @@ concurrency:
 jobs:
   gitleaks:
     name: Scan for hardcoded secrets
-    runs-on: [self-hosted, mroot-self-hosted]
+    # runner-policy-ok: PUBLIC repo -- the org's only runner group ("Default")
+    # has allows_public_repositories=false, so GitHub will never assign a
+    # self-hosted runner to this job regardless of labels; it just queues
+    # forever. See the header comment above for the full rationale. The
+    # marker is required (not just the prose above) because
+    # scripts/gha-drift-heal.sh only recognizes MARKER_RE on the runs-on
+    # line itself or on a comment block immediately preceding it -- a prose
+    # rationale separated by other YAML keys is invisible to it, which is
+    # how PR #6 reverted this line on 2026-10-19.
+    runs-on: ubuntu-latest  # runner-policy-ok: self-hosted cannot run on a public repo
     timeout-minutes: 10
     permissions:
       contents: read
