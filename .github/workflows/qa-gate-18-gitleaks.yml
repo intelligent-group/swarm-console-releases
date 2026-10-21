@@ -48,22 +48,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          # fetch-depth: 0 required so `gitleaks detect` scans the full commit
-          # history, not just the shallow tip.
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Install gitleaks CLI (pinned)
-        run: |
-          GITLEAKS_VERSION="8.27.0"
-          mkdir -p "$RUNNER_TEMP/gitleaks"
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz -C "$RUNNER_TEMP/gitleaks" gitleaks
-          "$RUNNER_TEMP/gitleaks/gitleaks" version
+      # QA Gate 18 install + hard-gate scan live ONCE in gha-lib (ait-claude-config#13059).
+      - name: Gitleaks secret scan (gha-lib)
+        uses: intelligent-group/gha-lib/actions/gitleaks-scan@v1
 
-      - name: Run gitleaks (hard gate)
-        # --exit-code 1 keeps this a REAL blocking scan: any detected leak
-        # fails the job (and the PR). --redact prevents the secret value
-        # itself from appearing in public logs. No `|| true`, no
-        # continue-on-error.
-        run: |
-          "$RUNNER_TEMP/gitleaks/gitleaks" detect --source . --redact --no-banner --exit-code 1
