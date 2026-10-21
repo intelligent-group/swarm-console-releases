@@ -12,11 +12,17 @@ name: QA Gate 18 - Gitleaks Secret Scan
 # ubuntu-latest is used instead, which is free/unlimited on public repos, so
 # this is not a billable-cost decision.
 #
-# Ship dispatch-only first (issue #7404): no schedule cron here yet. Prove
-# one real run lands clean on a PR/push, then a follow-up can arm a weekly
-# full-history sweep -- see memory/feedback_pilot_verify_before_arming_schedule.md.
+# The weekly full-history sweep (schedule trigger below) was armed 2026-10-21.
+
+# SCOPE (2026-10-21): checkout fetch-depth: 0 fetches EVERY remote branch, and a bare `gitleaks detect` walks
+# `git log --all`, so a secret-shaped fixture on any one open branch turned this required check red on EVERY PR.
+# PR runs now scan only their own commit range (see the scan step); push/dispatch scan the history reachable
+# from HEAD; the weekly cron below is the deliberate all-refs full-history sweep (blocking on its own schedule).
+# Same fix as intelligent-group/ait-crm#4500.
 
 on:
+  schedule:
+    - cron: '15 11 * * 1'  # Mon 7:15am ET weekly all-refs full-history sweep
   pull_request:
     branches: [main, master]
   push:
@@ -76,8 +82,25 @@ jobs:
           "$dir/gitleaks" version
 
       - name: Run gitleaks (hard gate)
-        # --exit-code 1 keeps this a REAL blocking scan: any detected leak fails the
-        # job (and the PR). --redact keeps secret values out of public logs. No
-        # `|| true`, no continue-on-error.
+        # PR: scan only this PR's net change (one synthetic commit: HEAD's tree on top of origin/<base>, built with
+        # commit-tree so HEAD/index are untouched). push/dispatch: history reachable from HEAD. schedule: all refs.
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
         run: |
-          "$RUNNER_TEMP/ig-gitleaks/gitleaks" detect --source . --redact --no-banner --exit-code 1
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request)
+              git fetch --no-tags origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+              NET="$(GIT_AUTHOR_NAME=ci GIT_AUTHOR_EMAIL=ci@example.invalid GIT_COMMITTER_NAME=ci GIT_COMMITTER_EMAIL=ci@example.invalid \
+                git commit-tree 'HEAD^{tree}' -p "origin/${BASE_REF}" -m 'net PR change')"
+              RANGE="origin/${BASE_REF}..${NET}" ;;
+            schedule) RANGE="" ;;
+            *) RANGE="HEAD" ;;
+          esac
+          echo "gitleaks scope: ${RANGE:-all refs} (event=${EVENT})"
+          if [ -n "$RANGE" ]; then
+            "$RUNNER_TEMP/ig-gitleaks/gitleaks" detect --source . --redact --no-banner --exit-code 1 --log-opts="${RANGE}"
+          else
+            "$RUNNER_TEMP/ig-gitleaks/gitleaks" detect --source . --redact --no-banner --exit-code 1
+          fi
